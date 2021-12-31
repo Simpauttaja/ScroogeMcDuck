@@ -236,7 +236,7 @@ if __name__ == '__main__':
 
     # Keep printing out available commands and asking for a new command until Quit (command 5 atm) is given.
     while True:
-
+        print("AVAILABLE COMMANDS")
         for command in commands:
             print(command, ". ", commands[command], sep="")
         cmd = input("Please choose a number and press ENTER\n>> ")
