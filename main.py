@@ -35,6 +35,9 @@ def read_dates():
             if start_dt > datetime.today():
                 print("Scrooge McClairvoyant, is that you? Please enter a date that is not from the future.\n")
                 continue
+            if start_dt.year < 2008:
+                print("Bitcoin wasn't invented quite yet back then...\n")
+                continue
         except ValueError:
             print(error_message)
         else:
@@ -211,8 +214,9 @@ def time_machine(price_data):
         return None
 
     print(f"Your investment would have been {Color.GREEN}{profit * 100:.2f}%{Color.END} of its initial value,"
-          f" if you just had bought BTC on {Color.CYAN}{low_date}{Color.END} and sold on "
-          f"{Color.CYAN}{high_date}{Color.END}\n")
+          f"\nif you just had bought BTC on {Color.CYAN}{low_date}{Color.END}, when value was "
+          f"{Color.RED}{low_value:,.2f} {Color.END}eur \nand sold on {Color.CYAN}{high_date}{Color.END} when value"
+          f"was {Color.GREEN}{high_value:,.2f}{Color.END}eur\n")
 
 
 if __name__ == '__main__':
@@ -227,11 +231,12 @@ if __name__ == '__main__':
     commands = {1: 'Enter new date range',
                 2: 'Find longest bearish trend',
                 3: 'Find highest trading volume',
-                4: 'Time machine!',
+                4: 'Find biggest profit',
                 5: 'Quit'}
 
     # Keep printing out available commands and asking for a new command until Quit (command 5 atm) is given.
     while True:
+
         for command in commands:
             print(command, ". ", commands[command], sep="")
         cmd = input("Please choose a number and press ENTER\n>> ")
