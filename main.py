@@ -1,13 +1,13 @@
-# Mikael U.
-# Small program to help Scrooge McDuck to speculate how much money he has lost by not jumping on the
-# crypto train
-
-
 # "Standard libraries only..."
+# from asyncore import read
 import calendar
+# from distutils.command.clean import clean
+
 import json
+# from tracemalloc import start
+# from typing import Iterator
 import urllib.request as request
-from datetime import datetime, date, time, timezone
+from datetime import datetime
 
 
 # To give us some colors to play with...
@@ -19,214 +19,178 @@ class Color:
     END = '\033[1;37;0m'
 
 
-def read_dates():
-    """This function will be called to ask user-entered dates and form epoch/unix timestamps
-        returns timestamps for start and end date"""
+DATE_FORMAT_ERROR = ("Something went wrong with the format OR day/month value"
+                     "is not realistic. \n")
+DATE_FUTURE_ERROR = ("Scrooge McClairvoyant, is that you? Please enter a date"
+                     "that is not from the future.\n")
+DATE_PAST_ERROR = "Bitcoin wasn't invented quite yet back then...\n"
 
-    error_message = "Something went wrong with the format OR day/month value is not realistic. \n"
-    stamp_start = datetime
-    # Keep asking for a START date until one is provided in proper format dd.mm.yyyy or d.m.yyyy
-    # convert to epoch/unix timestamp when proper format is entered
+DATE_ORDER_ERROR = ("Scrooge's ability to bend space-time continuum is"
+                    "currently under maintenance.\nPlease make sure end"
+                    " date is actually later than start date.\n")
+
+
+def date_sanity_check(date=datetime, comparator_date=datetime.min):
+    if date > datetime.today():
+        print(DATE_FUTURE_ERROR)
+        return False
+
+    if date.year < 2008:
+        print(DATE_PAST_ERROR)
+        return False
+
+    if date < comparator_date and \
+       comparator_date != datetime.min:
+        print(DATE_ORDER_ERROR)
+        return False
+
+    return True
+
+
+def read_a_date(start_or_end="", comparator_date=datetime.min):
+    # comparator date helps when asking for the END date, where END needs to be
+    # after START...
+    date_time_stamp = datetime
     while True:
-        print("Please enter the START date as DD.MM.YYYY")
+        print(f"Please enter the {start_or_end} date as DD.MM.YYYY")
         try:
-            start_date = input(">> ")
-            start_dt = datetime.strptime(start_date, "%d.%m.%Y")
-            if start_dt > datetime.today():
-                print("Scrooge McClairvoyant, is that you? Please enter a date that is not from the future.\n")
+            date = input(">> ")
+            date_datetime = datetime.strptime(date, "%d.%m.%Y")
+
+            if not date_sanity_check(date_datetime, comparator_date):
                 continue
-            if start_dt.year < 2008:
-                print("Bitcoin wasn't invented quite yet back then...\n")
-                continue
+
         except ValueError:
-            print(error_message)
+            print(DATE_FORMAT_ERROR)
+
         else:
-            stamp_start = calendar.timegm(start_dt.timetuple())
-            print("Starting date entered successfully! \n")
+            date_time_stamp = calendar.timegm(date_datetime.timetuple())
+            print(f"{start_or_end} date entered succesfully! \n")
             break
 
-    # Keep asking for an END date until one is provided in proper format dd.mm.yyyy or d.m.yyyy
-    # convert to epoch/unix timestamp when proper format is entered
-    while True:
-        print("Please enter the END date as DD.MM.YYYY")
-        try:
-            end_date = input(">> ")
-            end_dt = datetime.strptime(end_date, "%d.%m.%Y")
-            # if a date is found in acceptable format, we need to make sure it actually is later than our starting
-            # date...
-            if end_dt:
-                stamp_end = calendar.timegm(end_dt.timetuple())
-                if stamp_end < stamp_start:
-                    print("Scrooge's ability to bend space-time continuum is currently under maintenance. \n"
-                          "Please make sure end date is actually later than start date.\n")
-                    continue
-        except ValueError:
-            print("Something went wrong with the format.")
-        else:
-            stamp_end = calendar.timegm(end_dt.timetuple())
-            print("Ending date entered successfully!\n")
-            break
-
-    return stamp_start, stamp_end
+    return date_time_stamp, date_datetime
 
 
-def get_data(start, end):
-    """
-    :param start: starting date in epoch/unix timestamp
-    :param end: ending date in epoch/unix timestamp
-    :return: data with values for price, volume and market_cap only from 00:00 UTC or as close to is as possible
-    """
-    # "Tip: You should add 1 hour to the `to` input to make sure
-    # that you always get data for the end date as well." -> add magic_number to end date timestamp
+def read_both_dates():
+    start_date_stamp, start_datetime = read_a_date("START")
+    end_date_stamp, end_datetime = read_a_date("END", start_datetime)
+
+    start_date_human = \
+        datetime.utcfromtimestamp(start_date_stamp).strftime('%d.%m.%Y')
+    end_date_human = \
+        datetime.utcfromtimestamp(end_date_stamp).strftime('%d.%m.%Y')
+
+    return start_date_stamp, end_date_stamp, start_date_human, end_date_human
+
+
+def fetch_data(start_date, end_date):
+    # should add an hour to the end to ensure also
+    # getting the last desired date...
     magic_number = 3600
-    url = 'https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?vs_currency=eur&from=' + str(start) + \
-          '&to=' + str(end + magic_number)
+    url = 'https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range?'\
+        + 'vs_currency=eur&from=' + str(start_date) + \
+          '&to=' + str(end_date + magic_number)
 
     print("Fetching data from ", url, "\n")
     file = request.urlopen(url)
     data_to_clean = json.loads(file.read().decode('utf-8'))
 
-    # We want to only keep the values from 00:00 UTC or as close to it as possible...so
-    # first we replace all timestamps in datamatrix with actual human-readable dates
-    # For example data_to_clean['prices'] contains tuples [timestamp, price]. So data_to_clean['prices'][-1][0]
-    # would give the timestamp of last entry in data_to_clean['prices']
-    for i in range(len(data_to_clean['prices'])):
-        key = datetime.utcfromtimestamp(data_to_clean['prices'][i][0] / 1000).strftime('%d.%m.%Y')
-        data_to_clean['prices'][i][0] = key
-        data_to_clean['total_volumes'][i][0] = key
-        data_to_clean['market_caps'][i][0] = key
+    return data_to_clean
 
-    cleaned_data = {"prices": [data_to_clean['prices'][0]],
-                    "total_volumes": [data_to_clean['total_volumes'][0]],
-                    "market_caps": [data_to_clean['market_caps'][0]]}
 
-    # Now we can compare the human-readable dates between N and N-1...and if the date already exists in cleaned_date,
-    # we move on. Data_to_clean is sorted by time. Hence, we can trust that if we already picked the first value
-    # for certain date to be entered into cleaned_data, it actually is the first datapoint of given day thus closest
-    # to 00:00 UTC and no further dataentries for the same day need to be considered.
-    for i in range(len(data_to_clean['prices'])):
-        if data_to_clean['prices'][i][0] != cleaned_data['prices'][-1][0]:
-            cleaned_data['prices'].append(data_to_clean['prices'][i])
-            cleaned_data['total_volumes'].append(data_to_clean['total_volumes'][i])
-            cleaned_data['market_caps'].append(data_to_clean['market_caps'][i])
+def clean_data(raw_data):
+
+    cleaned_data = {}
+    for key in raw_data:
+        cleaned_data[key] = []
+
+    for date in raw_data['prices']:
+        # convert to human-readable form
+        current = \
+            datetime.utcfromtimestamp(date[0] / 1000).strftime('%d.%m.%Y')
+
+        if len(cleaned_data['prices']) == 0 or \
+           current != cleaned_data['prices'][-1][0]:
+            for key in cleaned_data:
+                cleaned_data[key].append([current, date[1]])
 
     return cleaned_data
 
 
-def bear_streak(price_data):
-    """
-    :param price_data: this is just cleaned_data['prices'], containing [date, BTC value]
-    :return: return None is called to break out from function if criteria for data is not met. Else just print out the
-             streak info.
-
-    Try to find the longest bearish streak aka. downward trend for BTC value from given data.
-    If N + 1 < N, (N + 1) makes it to  our list.
-    """
-
-    if len(price_data) < 2:
-        print("Can't search for trends with fewer than 2 samples!")
-        return None
+def longest_bearish_streak(price_data):
 
     bear_longest = []
     bear_temp = []
-    # Go through the data and keep appending bear_temp while the BTC values are decreasing.
-    # If trend is broken, compare bear_temp to our current bear_longest and start looking for a new trend.
-    for i in range(len(price_data)):
-        if i >= 1 and price_data[i-1][1] >= price_data[i][1]:
-            bear_temp.append(price_data[i])
+
+    iterator = iter(price_data)
+    prev = next(iterator)
+
+    for current in iterator:
+        if current[1] < prev[1]:  # current[date, price]
+            bear_temp.append(current)
+
             if len(bear_temp) > len(bear_longest):
                 bear_longest = bear_temp.copy()
-        else:
-            bear_temp.clear()
 
-    if not bear_longest:
-        print("No bearish shenanigans happening in this range of dates!")
-        return None
+            prev = current
+            continue
 
-    start_date = price_data[0][0]
-    end_date = price_data[-1][0]
-    bear_start_date = bear_longest[0][0]
-    bear_end_date = bear_longest[-1][0]
-    print(f"According to the data from CoinGecko, between {Color.CYAN}{start_date} and {end_date}{Color.END} "
-          f"the longest downward trend for Bitcoin lasted for {Color.RED}{len(bear_longest)}{Color.END} days. \n"
-          f"This particular bear roared between {Color.CYAN}{bear_start_date} and {bear_end_date}{Color.END}.\n")
+        prev = current
+        bear_temp.clear()
+
+    return bear_longest
 
 
 def trading_volume(all_data):
-    """
-    :param all_data: as the name implies
-    Find and print out information related to the highest trading volume in given date range.
-    """
     highest_vol = 0
-    price_at_hvol = 0
+    price_at_highest_vol = 0
     highest_date = 0
 
-    for i in range(len(all_data['total_volumes'])):
-        if int(all_data['total_volumes'][i][1]) > highest_vol:
-            highest_vol = float(all_data['total_volumes'][i][1])
-            price_at_hvol = float(all_data['prices'][i][1])
-            highest_date = all_data['total_volumes'][i][0]
+    for index, current in enumerate(all_data['total_volumes']):
+        if current[1] > highest_vol:
+            highest_vol = float(current[1])  # current[date, total_volume]
+            highest_date = current[0]
+            price_at_highest_vol = float(all_data['prices'][index][1])
 
-    print(f"According to the data from CoinGecko, highest trading volume occurred on {Color.CYAN}{highest_date}"
-          f"{Color.END} with a trading volume of {Color.CYAN}{highest_vol:,.2f}{Color.END} units. \nBTC value was "
-          f"{Color.GREEN}{price_at_hvol:,.2f}{Color.END} eur, so total trade value was "
-          f"{Color.GREEN}{highest_vol * price_at_hvol:,}{Color.END} eur.\n")
+    return highest_vol, price_at_highest_vol, highest_date
 
 
 def time_machine(price_data):
-    """
-    :param price_data: is equal to clean_data['prices'] containing [date, BTC value]
-    :return: None, if it is not possible to make profit within this date range
 
-    Find the lowest and highest BTC values. Or more accurately, the highest possible factor highvalue / lowvalue so that
-    low value occurs before high value"""
     low_value = price_data[0][1]
     low_date = price_data[0][0]
+    initial_date = price_data[0][0]
     high_value = 0
     high_date = datetime
     profit = 0
 
-    # This is a bit ugly with 2 nested for-loops, but should get the job done. First, iterate from "left to right"
-    # trying to find a smaller value than the previous smallest value. When you find a smaller value, start looking
-    # for bigger-than-previous-biggest values from the remainder of the list. If a bigger value is found,
-    # calculate factor(aka profit) by division. If this factor > previous biggest profit, store the
-    # high and low coin values with their corresponding dates.
-    for i in range(len(price_data)):
-        temp_low = price_data[i][1]
-        if temp_low <= low_value:
-            # A new lowest value was found, let's find the high value providing the biggest possible factor...
-            temp_highest = 0
-            for j in range(i+1, len(price_data)):
-                temp_high = price_data[j][1]
-                if temp_high > temp_highest:
-                    temp_highest = temp_high
-                    factor = temp_highest / temp_low
-                    if factor > profit:
-                        profit = factor
-                        high_value = temp_highest
-                        low_value = temp_low
-                        low_date = price_data[i][0]
-                        high_date = price_data[j][0]
+    for idx, current in enumerate(price_data):        
+        temp_low_value = current[1]
+        temp_low_date = current[0]
 
-    # High value needs to be after low value in order to make profit
-    if high_value < low_value:
-        print(f"Sorry Scrooge, but no profit to be made in this date range!\n")
-        return None
+        print("current :", temp_low_value)
+        if temp_low_value < low_value or temp_low_date == initial_date:
+            temp_high = max(price_data[idx:], key=lambda x: x[1])
+            temp_high_value = temp_high[1]
+            temp_high_date = temp_high[0]
+            temp_profit = temp_high_value / temp_low_value
 
-    print(f"Your investment would have been {Color.GREEN}{profit * 100:.2f}%{Color.END} of its initial value,"
-          f"\nif you just had bought BTC on {Color.CYAN}{low_date}{Color.END}, when value was "
-          f"{Color.RED}{low_value:,.2f} {Color.END}eur \nand sold on {Color.CYAN}{high_date}{Color.END} when value"
-          f"was {Color.GREEN}{high_value:,.2f}{Color.END}eur\n")
+            if temp_profit > profit:
+                profit = temp_profit
+                low_value = temp_low_value
+                low_date = temp_low_date
+                high_value = temp_high_value
+                high_date = temp_high_date
+
+    return profit, low_value, low_date, high_value, high_date
 
 
+# MAIN PROGRAM BEGINS
 if __name__ == '__main__':
-
-    print(f"This is a small script purely intended for those wishing to torture themselves by asking \"what if I had "
-          f"spent 500 euros on BTC back in 2015 or so...?\"")
-
-    # Ask for initial date range and form data
-    date_start, date_end = read_dates()
-    data = get_data(date_start, date_end)
+    print("\n\n\n\n")
+    start_date, end_date, start_human, end_human = read_both_dates()
+    data_to_clean = fetch_data(start_date, end_date)
+    final_data = clean_data(data_to_clean)
 
     commands = {1: 'Enter new date range',
                 2: 'Find longest bearish trend',
@@ -234,40 +198,76 @@ if __name__ == '__main__':
                 4: 'Find biggest profit',
                 5: 'Quit'}
 
-    # Keep printing out available commands and asking for a new command until Quit (command 5 atm) is given.
+    # Keep printing out available commands and asking for a new command until
+    # Quit (corresponding number...) is given.
     while True:
-        print("AVAILABLE COMMANDS")
+        print(f"{Color.RED}AVAILABLE COMMANDS{Color.END}")
         for command in commands:
             print(command, ". ", commands[command], sep="")
         cmd = input("Please choose a number and press ENTER\n>> ")
 
+        # Read data
         if cmd == str(1):
-            date_start, date_end = read_dates()
-            data = get_data(date_start, date_end)
+            start_date, end_date, start_human, end_human = read_both_dates()
+            data_to_clean = fetch_data(start_date, end_date)
+            final_data = clean_data(data_to_clean)
 
+        # Find longest bearish streak
         elif cmd == str(2):
-            bear_streak(data['prices'])
+            if len(final_data['prices']) < 2:
+                print("Can't search for trends with fewer than 2 samples!\n")
+                continue
 
+            longest_bear = longest_bearish_streak(final_data['prices'])
+            if not longest_bear:
+                print("No bearish shenanigans happening in this range "
+                      "of dates!\n")
+                continue
+
+            bear_start_date = longest_bear[0][0]  # list[date, price]
+            bear_end_date = longest_bear[-1][0]
+            print(f"According to the data from CoinGecko, between "
+                  f"{Color.CYAN}{start_human} and {end_human}{Color.END}"
+                  f" the longest downward trend for Bitcoin lasted for "
+                  f"{Color.RED}{len(longest_bear)}{Color.END} days. \n"
+                  f"This particular bear roared between "
+                  f"{Color.CYAN}{bear_start_date} and "
+                  f"{bear_end_date}{Color.END}.\n")
+
+        # Find highest trading volume and its monetary value
         elif cmd == str(3):
-            trading_volume(data)
+            highest_vol, price_at_highest_vol, highest_date = \
+                trading_volume(final_data)
 
+            print(f"According to the data from CoinGecko, highest trading "
+                  f"volume occurred on {Color.CYAN}{highest_date}"
+                  f"{Color.END} with a trading volume of "
+                  f"{Color.CYAN}{highest_vol:,.2f}{Color.END} units. \n"
+                  f"BTC value was {Color.GREEN}{price_at_highest_vol:,.2f}"
+                  f"{Color.END} eur, so total trade value was {Color.GREEN}"
+                  f"{highest_vol * price_at_highest_vol:,}{Color.END} eur.\n")
+        
+        # Find the most profitable date combination to invest and sell
         elif cmd == str(4):
-            time_machine(data['prices'])
+            profit, low_value, low_date, high_value, high_date = \
+                time_machine(final_data['prices'])
+
+            if high_value < low_value:
+                print(f"Sorry Scrooge, but no profit to be made in this date"
+                      f"range!\n")
+
+            print(f"Your investment would have been "
+                  f"{Color.GREEN}{profit * 100:.2f}%{Color.END} of its initial"
+                  f" value,\nif you just had bought BTC on {Color.CYAN}"
+                  f"{low_date}{Color.END}, when value was {Color.RED}"
+                  f"{low_value:,.2f} {Color.END}eur \nand sold on "
+                  f"{Color.CYAN}{high_date}{Color.END} when value"
+                  f" was {Color.GREEN}{high_value:,.2f}{Color.END}eur\n")
 
         elif cmd == str(5):
             print("Goodbye, you absolute legend!")
             break
 
         else:
-            print("Something went wrong. Did you give a number and the number only?")
-
-
-
-
-
-
-
-
-
-
-
+            print(f"Something went wrong. Did you give a number and the number"
+                  f"only?\n")
